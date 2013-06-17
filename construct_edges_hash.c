@@ -20,7 +20,7 @@ http://github.com/rombdn
 
 //10,000,000 buckets minimize collisions
 //and is not too memory heavy (sizeof(bucket) = 4 Bytes (pointer))
-//10,000,000 * 4 => around 40MB
+//10,000,000 * 4 (or 8 in 64bits) => around 40MB (resp. 80MB)
 #define HASHTABLE_SIZE 10000000
 
 /*
