@@ -1,2 +1,4 @@
 data/
 .DS_STORE
+edges.txt
+*.exe

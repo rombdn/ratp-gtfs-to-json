@@ -80,8 +80,12 @@ def get_stop_times(path_stops, path_stop_times, trips)
 end
 
 
-def get_stops_all(path)
+def get_stops_all(path, merge = false)
     stops = {}
+    stops[:map] = {}
+    ids_by_name = {} #:name => id
+    ids_map = {} #:id of a duplicate element => id of reference element
+
     IO.foreach(path).each_with_index do |line, line_index|
         #e.g 2251,,"Dupleix","Grenelle (terre-plein face au 65/68 boulevard de) - 75115",48.850742650180216,2.292463226824505,0,
         next if line_index == 0
@@ -91,22 +95,43 @@ def get_stops_all(path)
         lat = line.match(/4[0-9]\.[0-9]+/)[0]
         lon = line.match(/2\.[0-9]+/)[0]
 
-        stops[stop_id] = {
-            :name => name,
-            :lat => lat,
-            :lon => lon,
-            :line => 0,
-            :type => 0,
-            :edges => [],
-            :direction => ""
-        }
+        if ids_by_name[name].nil?
+            ids_by_name[name] = stop_id
+            stops[stop_id] = {
+                :name => name,
+                :lat => lat,
+                :lon => lon,
+                :line => 0,
+                :type => 0,
+                :edges => {},
+                :direction => "",
+                :visited => 0
+            }
+        end
+        
+        stops[:map][stop_id] = ids_by_name[name]
+ 
     end
+    
     stops
 end
 
 
+def r_stops_delete_duplicate_names!(stops)
+    stops.inject({}) { |result, (_, v)|
+        if result[v[:name]].nil?
+            result[v[:name]] = v
+        else
+            v = result[v[:name]]
+        end
+
+        result
+    }
+end
+
+
 def create_graph(path, stops)
-    graph = stops
+    graph = stops.reject { |k, v| k == :map }
 
     IO.foreach(path).each_with_index do |line, line_index|
         next if line_index == 0
@@ -117,15 +142,31 @@ def create_graph(path, stops)
         duration = line.at(2)
         begin_time = line.at(3)
         end_time = line.at(4)
-        type = line.at(5)
+        type = line.at(5).strip
 
-        graph[from][:edges].push({
-            :dest_id => to,
-            :duration => duration,
-            :begin_time => begin_time,
-            :end_time => end_time,
-            :type => type
-        })
+        from_r = stops[:map][from]
+        to_r = stops[:map][to]
+
+        next if from_r == to_r
+
+        if graph[from_r][:edges][to_r].nil?
+            graph[from_r][:edges][to_r] = {
+                :duration => duration,
+                :begin_time => begin_time,
+                :end_time => end_time,
+                :type => type
+            }
+        else
+            #keep the shortest
+            if graph[from_r][:edges][to_r][:duration].to_i > duration.to_i
+                    graph[from_r][:edges][to_r] = {
+                    :duration => duration,
+                    :begin_time => begin_time,
+                    :end_time => end_time,
+                    :type => type
+                }
+            end
+        end
     end
     
     graph
@@ -136,8 +177,10 @@ def output_graph(path, graph)
     fout = File.open(path, 'w')
 
     fout.puts("{")
-    graph.each { |key, node|
-        output = "
+    graph.each_with_index { |(key, node), index_node|
+        output = ""
+        output += "," if index_node > 0
+        output += "
         \"#{key}\": {
             \"name\": \"#{node[:name]}\",
             \"loc\": {
@@ -149,15 +192,16 @@ def output_graph(path, graph)
             \"dir:\": \"#{node[:direction]}\",
             \"edges\": [
                 "
-        node[:edges].each { |edge|
+        node[:edges].each_with_index { |(dest_id, edge), index|
+            output += "," if index > 0
             output +=
                 "{
-                    \"dest\": \"#{edge[:dest_id]}\",
+                    \"dest\": \"#{dest_id}\",
                     \"dur\": \"#{edge[:duration]}\",
-                    \"begin\": \"#{edge[:begin]}\",
-                    \"end\": \"#{edge[:end]}\",
+                    \"begin\": \"#{edge[:begin_time]}\",
+                    \"end\": \"#{edge[:end_time]}\",
                     \"type\": \"#{edge[:type]}\"
-                },
+                }
                 "
         }
 
@@ -172,6 +216,10 @@ def output_graph(path, graph)
 end
 
 
+###
+# main
+###
+
 if ARGV.length < 4
     puts "Usage cmd <RATP_GTFS_LINES> <RATP_GTFS_FULL> <edges.txt> <output.json>"
     exit
@@ -182,9 +230,13 @@ if not File.directory?("#{ARGV[0]}")
     exit
 end
 
-puts "Get all stops"
-stops_full = get_stops_all("#{ARGV[1]}/stops.txt")
 
+puts "Get all stops (nodes)"
+stops = get_stops_all("#{ARGV[1]}/stops.txt")
+#r_stops_delete_duplicate_names!(stops)
+
+# Add infos from routes (line, direction, type) to the stops hereabove
+# => Join routes.txt, trips.txt and stop_times.txt then join stop_times with the stops
 Dir.glob("#{ARGV[0]}/*").each  { |line_dir|
     puts "#{line_dir}"
 
@@ -192,35 +244,35 @@ Dir.glob("#{ARGV[0]}/*").each  { |line_dir|
     routes = get_routes("#{line_dir}/routes.txt")
 
     puts "Get trips"
-    trips = get_trips("#{line_dir}/trips.txt")
+    trip_id_to_routes_id = get_trips("#{line_dir}/trips.txt")
 
     puts "Get stop_times"
-    stop_times = get_stop_times("#{line_dir}/stops.txt", "#{line_dir}/stop_times.txt", trips)
+    stop_times = get_stop_times("#{line_dir}/stops.txt", "#{line_dir}/stop_times.txt", trip_id_to_routes_id)
 
     puts "Number of stops : #{stop_times.length}"
 
     stop_times.each { |stop_id, trip_id|
-        if stops_full[stop_id].nil?
+        if stops[:map][stop_id].nil?
             puts "ERROR: stop #{stop_id} not in stops_full"
             exit
         end
 
-        stops_full[stop_id][:line] = routes[trips[trip_id]][:line]
-        stops_full[stop_id][:type] = routes[trips[trip_id]][:type]
-        stops_full[stop_id][:direction] = routes[trips[trip_id]][:direction]
+        stops[stops[:map][stop_id]][:line] = routes[trip_id_to_routes_id[trip_id]][:line]
+        stops[stops[:map][stop_id]][:type] = routes[trip_id_to_routes_id[trip_id]][:type]
+        stops[stops[:map][stop_id]][:direction] = routes[trip_id_to_routes_id[trip_id]][:direction]
     }
     
     puts " "
 }
 
 puts "Recherche des stops sans ligne"
-puts stops_full.select { |key, stop| stop[:line] == 0 }.length
+puts stops.select { |key, stop| stop[:line] == 0 }.length
 
 
 puts " "
 puts "Create Graph"
-graph = create_graph("#{ARGV[2]}", stops_full)
-
+graph = create_graph("#{ARGV[2]}", stops)
+puts graph["4025444"]
 
 puts " "
 puts "Output graph in file #{ARGV[3]}"
@@ -228,44 +280,28 @@ output_graph(ARGV[3], graph)
 
 
 
-
-
-
 puts " "
 puts "Demo"
 
-types = {
-    "1" => "Metro",
-    "2" => "Bus"
-}
-'
-graph.each { |k, v|
-    #puts "line"
-    next if v[:line] != "6"
-
-    puts "Ligne #{v[:line]}"
-    puts "Station #{v[:name]}"
-    puts "Stations accessibles :"
-
-    v[:edges].each { |edge|
-        to = edge[:dest_id]
-        puts "#{graph[to][:name]}, ligne #{graph[to][:line]}, #{types[graph[to][:type]]}, duree: #{edge[:duration]}"
-    }
-
-    puts " "
-}
-'
-
 
 start = graph["2390"]
+visited = {}
 q = []
 puts "Ligne #{start[:line]}"
 puts "Parcours"
 node = start
+
 while not node.nil?
+    node[:visited] = 1
+    
     puts "Station #{node[:name]}"
-    next_node = node[:edges].map { |edge| graph[edge[:dest_id]] if graph[edge[:dest_id]][:line] == "6" }.first
-    q.push(next_node)
-    node = q.pop
-    #q.push node[:edges].select { |k, edge| graph[edge[:dest_id]][:line] == "6" }.first
+    
+    q += node[:edges].keys.select { |dest_id| 
+        graph[dest_id][:line] == "6" and graph[dest_id][:visited] != 1
+    }.map { |dest_id| 
+        graph[dest_id]
+    }
+    p q.length
+    
+    node = q.shift
 end

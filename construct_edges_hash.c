@@ -5,24 +5,29 @@ Create edge with pairs stop_id/last line stop_id and average dep_time difference
 Output raw edges (from_stop_id, to_stop_id, average duration, begin_time, end_time)
 
 @param char* path_to_RATP_GTFS_FULL_directory
+
+
+(c) 2013 Romain BEAUDON
+This code may be freely distributed under the GPL2 license
+http://github.com/rombdn
 =================================
 */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "r_datastruct.h"
+#include "r_hashtable.h"
+
+//10,000,000 buckets minimize collisions
+//and is not too memory heavy (sizeof(bucket) = 4 Bytes (pointer))
+//10,000,000 * 4 => around 40MB
+#define HASHTABLE_SIZE 10000000
 
 /*
 =================================
-//there are 26622 unique stop_id and 76941 transfers
-//there should not be more than one edge for each stop_id
-//(one stop_id per route (line, direction))
-//and one edge per transfer
-//26622 + 76941 = 103563
+edge structure
 =================================
 */
-#define MAX_EDGES 110000
 
 typedef struct r_edge {
     int to_stop_id;
@@ -79,7 +84,11 @@ r_create_edge
 r_edge* r_create_edge(int from_stop_id, int to_stop_id, int type)
 {    
     r_edge *new = malloc( sizeof(r_edge) );
-
+/*
+    if(from_stop_id == 0) {
+        fprintf(stderr, "ERROR in r_create_edge: 0 -> : %d\n", to_stop_id);
+    }
+*/
     new->from_stop_id   = from_stop_id;
     new->to_stop_id     = to_stop_id;
     new->type           = type;
@@ -101,6 +110,7 @@ void r_update_edge(r_edge *edge, int start_time, int end_time)
 {        
     //used for averaging durations at the end
     edge->counter += 1;
+    
     edge->duration += end_time - start_time;
 
     if(edge->type == METRO) {
@@ -122,20 +132,22 @@ void r_update_edge(r_edge *edge, int start_time, int end_time)
 r_parse_stop_times_file
 =============
 */
-int r_parse_stop_times_file(char *path, r_hashtable *edges_table)
+void r_parse_stop_times_file(char *path, r_hashtable *edges_table)
 {
-    int i = 0;
+    int i = 0, j = 0;   
     r_edge *edge = NULL;
-    
+    char key[20];
+
+    //file reading buffers
     FILE *fin = NULL;
     char buffer_line[1024];
     char *pch = NULL;
 
+    //inputs buffers
     char trip_id[255];
     int to_stop_id = 0, from_stop_id = 0;
     int dep_time = 0, last_dep_time = 0;
-    char key[20];
-    
+
 
     fin = r_open_file(path, "r");
 
@@ -187,8 +199,9 @@ int r_parse_stop_times_file(char *path, r_hashtable *edges_table)
         }
         else
         {
-            r_update_edge( edge, last_dep_time, dep_time );            
+            r_update_edge( edge, last_dep_time, dep_time );
         }
+
     }
 
     fclose(fin);
@@ -204,17 +217,19 @@ origin and dest are on the same line
 we just add an edge for each line
 =============
 */
-/*
-int r_parse_transfers_file(char *path, edge *edges, int last_index, int max_index)
+void r_parse_transfers_file(char *path, r_hashtable *edges_table)
 {
+    int i = 0;   
+    r_edge *edge = NULL;
+    char key[20];
+
+    //file reading buffers
+    FILE *fin = NULL;
     char buffer_line[1024];
-    char *pch;
-    FILE *fin;
+    char *pch = NULL;
 
-    int i = 0, index_line = 0, j = 0;
+    int from_stop_id = 0, to_stop_id = 0, duration = 0;
 
-    int from_stop_id = 0, to_stop_id = 0;
-    int duration = 0;
 
     fin = r_open_file(path, "r");
 
@@ -232,47 +247,76 @@ int r_parse_transfers_file(char *path, edge *edges, int last_index, int max_inde
             if(i == 2) { duration = atoi(pch); }
         }
 
-        last_index = r_create_edge(edges, from_stop_id, to_stop_id, last_index, max_index);
-        r_update_edge(edges, last_index, from_stop_id, to_stop_id, CORRESPONDANCE, 0, duration);
+        sprintf(key, "%d%d", from_stop_id, to_stop_id);
+
+        edge = r_create_edge(from_stop_id, to_stop_id, CORRESPONDANCE);
+        r_hash_add(edges_table, edge, key);
+        r_update_edge( edge, 0, duration );
     }
 
     fclose(fin);
-
-    return last_index;
 }
-*/
+
 
 /*
 =============
-r_print_edges
+r_print_edge
 =============
 */
-/*
-void r_print_edges(edge *edges, int last_index) {
-    int i;
+void r_print_edge(void *edge)
+{
+    int counter = 0;
+    int average_duration = 0;
+    int start_time = 0;
+    int end_time = 0;
 
-    printf("from_stop_id,to_stop_id,avg_duration,first_time,last_time, type\n"); 
-
-    for(i=0; i<last_index; ++i) {
-        //end of edges array
-        if(edges[i].to_stop_id == 0) 
-            break;
-
-        //entry edge, not used
-        if(edges[i].from_stop_id == 0)
-            continue;
-
-        printf("%d,%d,%d,%dh%d,%dh%d,%d\n", 
-            edges[i].from_stop_id,
-            edges[i].to_stop_id,
-            edges[i].duration / edges[i].counter,
-            edges[i].debut/3600,(edges[i].debut%3600)/60,
-            edges[i].end/3600,(edges[i].end%3600)/60,
-            edges[i].type
-            );
+    if(edge == NULL) {
+        fprintf(stderr, "ERROR in r_print_edge: edge to be printed is NULL");
+        exit(1);
     }
+
+    if( ((r_edge *)edge)->from_stop_id == 0 ) {
+        return;
+    }
+
+    counter = ((r_edge *)edge)->counter;
+    if( counter > 0 ) {
+        average_duration = (((r_edge *)edge)->duration) / counter;
+    }
+    else {
+        average_duration = 0;
+    }
+
+    start_time = ((r_edge *)edge)->debut;
+    end_time = ((r_edge *)edge)->end;
+
+    printf("%d,%d,%d,%dh%d,%dh%d,%d\n", 
+        ((r_edge *)edge)->from_stop_id,
+        ((r_edge *)edge)->to_stop_id,
+        average_duration,
+        start_time/3600, (start_time%3600)/60,
+        end_time/3600, (end_time%3600)/60,
+        ((r_edge *)edge)->type
+    );
 }
+
+
+/*
+=============
+r_destroy_edge
+=============
 */
+void r_destroy_edge(void *edge)
+{
+    #ifdef EDGE_DEBUG
+        fprintf(stderr, "Destroying edge %d -> %d\n", 
+            ((r_edge *)edge)->from_stop_id, 
+            ((r_edge *)edge)->to_stop_id);
+    #endif
+
+    free( (r_edge *)edge );
+}
+
 
 /*
 =============
@@ -283,25 +327,25 @@ int main(int argc, char **argv)
 {
     char path[1024];
     r_hashtable *edges;
-
-    edges = r_hash_create(5000);
+    int edges_nb = 0;
 
     if(argc < 2) {
         printf("Usage: %s <RATP_GTFS_FULL directory>\n", argv[0]);
         return 1;
     }
 
-    strcat(path, argv[1]);
-    strcat(path, "/stop_times.txt");
-    r_parse_stop_times_file(path, edges);
-/*
-    path[0] = '\0';
-    strcat(path, argv[1]);
-    strcat(path, "/transfers.txt");
-    //last_index = r_parse_transfers_file(path, edges, last_index, MAX_EDGES);
+    edges = r_hash_create(HASHTABLE_SIZE);
 
-    r_get_index(edges, hash, 4025388, 4025390);
-    //r_print_edges(edges, last_index);
-*/
+    sprintf(path, "%s/stop_times.txt", argv[1]);
+    r_parse_stop_times_file(path, edges);
+
+    sprintf(path, "%s/transfers.txt", argv[1]);
+    r_parse_transfers_file(path, edges);
+
+    edges_nb = r_hash_print(edges, &r_print_edge);
+    fprintf(stderr, "Edges NB: %d\n", edges_nb);
+    
+    r_hash_destroy(edges, &r_destroy_edge);
+
     return 0;
 }
