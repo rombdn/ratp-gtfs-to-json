@@ -1,66 +1,58 @@
+######
+# 
+# This script is to create a graph adjacency list using output of `create_raw_edges` and GTFS stops as nodes
+# See full explanations on the Github page
+#
+# (c) 2013 Romain BEAUDON
+# This code may be freely distributed under the GPL2 license
+# http://github.com/rombdn
+######
 
-#route e.g: 795705,100,"8","(BALARD <-> POINTE DU LAC) - Aller",,1,,FFFFFF,000000
-
-def get_routes(line_dir)
-    routes = {}
-
-    IO.foreach("#{line_dir}/routes.txt").each_with_index do |route, index|
-        next if index == 0
-
-        sroute = route.split(',')
-        id_ratp = sroute.at(0)
-        line = sroute.at(2).gsub("\"", '').strip
-        type = sroute.at(5).gsub("\"", '').strip
-
-        routes[id_ratp] = {:line => line, :direction => direction, :type => type}
-    end
-
-    routes
-end
-
-
-def get_trips(path)
-    route_trips = {}
-
-    IO.foreach(path).each_with_index do |trip_line, index|
-        next if index == 0
-
-        trip_line_s = trip_line.split(',')
-        route_id = trip_line_s.at(0)
-        trip_id = trip_line_s.at(2)
-
-        next if not route_trips[route_id].nil?
-
-        route_trips[trip_id] = route_id
-    end
-
-    route_trips
-end
+# `read_stops`
+# -------------------
+# Read the stops (our future nodes) from stops.txt to a hash {:stop_id => {:name, :type...}}
+# We have multiple stops with the same name (one per line per direction)
+# so we create a table that map stop_ids for stops with the same name to a unique reference stop_id for each name (table[stop_id] = refence stop_id)
+#       then we always use this table for future references to the stop_id (stops[stop_id] but stops[ table[stop_id] ])
+#       example for { "2098" => { :name => "picpus"}, "1789" => { :name => "picpus"}} 
+#           the table will be { "2098" => "1789", "1789" => "1789"}
+#           whenever we encounter "2098" the stop "1789" will be accessed ( stops[table["2098"]] === stops["1789"])
 
 
-def get_stop_times(path_stops, path_stop_times, trips)
-    stop_times = {}
-    nb_stops = 0
+# `add_routes_infos_to_stops`
+# there is no info about line, type or direction for stop_id in stops.txt
+# so let's join routes.txt, trips.txt and stop_times.txt for each line and add these infos to the stops hash
+#
+#                           Line X directory
+# -------------------------------------------------------------
+#     routes                       trips            stop_times       **stops hash** 
+#   ---------------------       -------------     -------------      -------------   
+#   | route_id          |       | route_id  |     | stop_id   |  <-> | stop_id   |   
+#   | trip_id           |  <->  | trip_id   | <-> | trip_id   |      | line?     |
+#   | type              |                                            | type?     |
+#   | line (directory)  |                    
+#
+# one little trick is to add the line info both in the reference and other stops because we will need it when creating edges
 
-    IO.foreach(path_stops).each { |line| nb_stops += 1 }
 
-    IO.foreach(path_stop_times).each_with_index do |stop_times_line, index|
-        next if index == 0
+# `parse_edges`
+# Create the graph by parsing edges.txt
+# For each edge encountered create a node for the current (mapped) from_stop_id if it doesn't exist
+# Then create an edge to the stop with id (mapped) to_stop_id
+# Because we use mapped ids multiple stops are reduced to one, leading to redundant edges
+# I made the choice to only keep the shortest edge...
+# Because we have only one stop for multiple lines (consequence of the merge) we must add the line info (:orig_line) to the edges
 
-        break if stop_times.length == nb_stops
 
-        stl_s = stop_times_line.split(',')
-        
-        trip_id = stl_s.at(0)
-        stop_id = stl_s.at(3)
+# variables :
+#  - stops = { "id1" => { :name => "", :type => "", ...}}, "id2" => {...}, ... }
+#  - stops_id_map = { "id2" => "id1", "id3" => "id1" } == 
+#  - graph = stops infos + edges hash
+#  - node: stops[:id]
+#  - edge: node[:edges][:dest_node_id]
+# next node: graph[ node[ :edges[:dest_node_id] ] ]
 
-        next if not stop_times[stop_id].nil?
 
-        stop_times[stop_id] = trip_id
-    end
-
-    stop_times
-end
 
 ##
 # read_stops
@@ -89,9 +81,7 @@ def read_stops(params)
             :lon => lon,
             :lines => [],
             :type => "",
-            :edges => {},
-            :direction => "",
-            :visited => 0
+            :orig_line => ""
         }
     end
 
@@ -111,16 +101,151 @@ def read_stops(params)
         result
     }
 
+    #transform stops array [{:id, :name, :type}, {:id2...}] to a hash {:id => {:name, :type...}, :id2 =>...}
     stops_by_id = Hash[ stops.map { |stop| [stop[:id] , stop] } ]
 
     return stops_by_id, stops_id_table
 end
 
+##
+# get_stops_for_line
+##
+def get_stops_for_line(line_dir)
+    routes  = {}
+    trips   = {}
+    nb_stops_for_line = 0
+    stops_for_this_line = {}
+
+    #routes
+    IO.foreach("#{line_dir}/routes.txt").each_with_index do |route_line, index|
+        next if index == 0
+        route_line = route_line.split(',')
+        
+        r_id            = route_line.at(0)
+        r_line          = route_line.at(2).gsub("\"", '').strip
+        r_type          = route_line.at(5).gsub("\"", '').strip
+        routes[r_id]    = {:line => r_line, :type => r_type}
+    end
+
+    #trips
+    IO.foreach("#{line_dir}/trips.txt").each_with_index do |trip_line, index|
+        next if index == 0
+        trip_line = trip_line.split(',')
+        
+        trip_route_id   = trip_line.at(0)
+        trip_id         = trip_line.at(2)
+        
+        trips[trip_id] = routes[trip_route_id]
+    end
+
+    #stop_times
+    IO.foreach("#{line_dir}/stops.txt").each { |line| nb_stops_for_line += 1 }
+    nb_stops_for_line -= 1 #little hack to break next loop as soon as we got infos for each stop
+
+    IO.foreach("#{line_dir}/stop_times.txt").each_with_index do |stop_line, index|
+        next if index == 0
+        break if stops_for_this_line.length == nb_stops_for_line
+        stop_line = stop_line.split(',')
+        
+        stop_trip_id    = stop_line.at(0)
+        stop_id         = stop_line.at(3)
+
+        stops_for_this_line[stop_id] = trips[stop_trip_id] if stops_for_this_line[stop_id].nil?
+    end    
+
+    stops_for_this_line
+end
 
 
+##
+# add_routes_infos_to_stops
+##
+def add_routes_infos_to_stops!(params)
+    root_path_line  = params[:ratp_gtfs_line_path]
+    stops           = params[:stops]
+    stops_id_table  = params[:stops_id_table]
+
+    #for each line get their belonging stops then add their infos the global stops hash
+    Dir.glob("#{root_path_line}/*").each do |line_dir|
+        puts "#{line_dir}"
+
+        get_stops_for_line(line_dir).each do |stop_current_line_k, stop_current_line_v|
+            mapped_stop_id = stops_id_table[stop_current_line_k]
+            if stop_current_line_v.nil?
+                puts stop_current_line_k
+                puts stop_current_line_v
+                puts "#{stop_current_line_k} -> #{mapped_stop_id} unknown"
+            end
+            stops[mapped_stop_id][:lines].push(stop_current_line_v[:line]).uniq!
+            stops[mapped_stop_id][:type] = stop_current_line_v[:type]
+            stops[stop_current_line_k][:orig_line] = stop_current_line_v[:line] #used for edges line
+        end
+    end
+end
+
+##
+# parse_edges
+##
+def parse_edges(params)
+    stops = params[:stops]
+    graph = {}
+    stops_id_table = params[:stops_id_table]
+
+    IO.foreach(params[:edges_path]).each_with_index do |line, line_index|
+        line = line.split(',')
+        
+        from_stop_id    = line.at(0)
+        to_stop_id      = line.at(1)
+        duration        = line.at(2)
+        begin_time      = line.at(3)
+        end_time        = line.at(4)
+        edge_type       = line.at(5).strip #transfer?
+
+        #map ids
+        mapped_from_stop_id = stops_id_table[from_stop_id]
+        mapped_to_stop_id   = stops_id_table[to_stop_id]
+
+        #create node
+        if graph[mapped_from_stop_id].nil?
+            graph[mapped_from_stop_id] = stops[mapped_from_stop_id]
+            graph[mapped_from_stop_id][:edges] = {}
+            graph[mapped_from_stop_id][:visited] = 0
+        end
+
+        #edge between two merged nodes
+        next if mapped_from_stop_id == mapped_to_stop_id
+
+        node = graph[mapped_from_stop_id]
+        edge = graph[mapped_from_stop_id][:edges][mapped_to_stop_id]
+
+        #edge type in edges.txt is not the same as route/stop type...
+        if( edge_type == "2" ) #walk
+            edge_type = 4
+        else
+            edge_type = node[:type] #metro, RER or BUS
+        end
+
+        #because we have merged nodes with the same name
+        #there are multiple redondants edges...
+        #keep only the shortest (by walk)
+        if (edge.nil?) or (duration.to_i < edge[:duration].to_i and edge_type == 4)
+            graph[mapped_from_stop_id][:edges][mapped_to_stop_id] = {
+                :duration   => duration,
+                :begin_time => begin_time,
+                :end_time   => end_time,
+                :type       => edge_type,
+                :line       => stops[to_stop_id][:orig_line]
+            }
+        end
+    end
+    
+    graph
+end
 
 
-
+##
+# output_graph
+##
 def output_graph(path, graph)
     fout = File.open(path, 'w')
 
@@ -132,23 +257,21 @@ def output_graph(path, graph)
         \"#{key}\": {
             \"name\": \"#{node[:name]}\",
             \"loc\": {
-                \"lat\": \"#{node[:lat]}\",
-                \"lon\": \"#{node[:lon]}\"
+                \"lat\": #{node[:lat].to_f.round(4)},
+                \"lon\": #{node[:lon].to_f.round(4)}
             },
-            \"line\": \"#{node[:line]}\",
-            \"type\": \"#{node[:type]}\",
-            \"dir:\": \"#{node[:direction]}\",
             \"edges\": [
                 "
         node[:edges].each_with_index { |(dest_id, edge), index|
             output += "," if index > 0
             output +=
                 "{
-                    \"dest\": \"#{dest_id}\",
-                    \"dur\": \"#{edge[:duration]}\",
+                    \"dest\": #{dest_id},
+                    \"dur\": #{edge[:duration]},
                     \"begin\": \"#{edge[:begin_time]}\",
                     \"end\": \"#{edge[:end_time]}\",
-                    \"type\": \"#{edge[:type]}\"
+                    \"type\": \"#{edge[:type]}\",
+                    \"line\": \"#{edge[:line]}\"
                 }
                 "
         }
@@ -163,142 +286,6 @@ def output_graph(path, graph)
     fout.close
 end
 
-
-def get_stops_for_line(line_dir)
-    routes  = {}
-    trips   = {}
-    nb_stops_for_line = 0
-    stops_current_line = {}
-
-    #routes
-    IO.foreach("#{line_dir}/routes.txt").each_with_index do |route_line, index|
-        next if index == 0
-        route_line = route_line.split(',')
-        
-        r_id            = route_line.at(0)
-        r_line          = route_line.at(2).gsub("\"", '').strip
-        r_type          = route_line.at(5).gsub("\"", '').strip
-        routes[r_id]    = {:line => r_line, :type => r_type}
-    end
-
-    #puts routes
-    #puts " "
-
-    #trips
-    routes_id = routes.keys
-    IO.foreach("#{line_dir}/trips.txt").each_with_index do |trip_line, index|
-        next if index == 0
-        break if routes_id.length == 0
-        trip_line = trip_line.split(',')
-        
-        trip_route_id   = trip_line.at(0)
-        trip_id         = trip_line.at(2)
-        
-        trips[trip_id] = routes[trip_route_id]
-    end
-
-    #stop_times
-    IO.foreach("#{line_dir}/stops.txt").each { |line| nb_stops_for_line += 1 }
-    nb_stops_for_line -= 1
-
-    IO.foreach("#{line_dir}/stop_times.txt").each_with_index do |stop_line, index|
-        next if index == 0
-        break if stops_current_line.length == nb_stops_for_line
-        stop_line = stop_line.split(',')
-        
-        stop_trip_id    = stop_line.at(0)
-        stop_id         = stop_line.at(3)
-
-        stops_current_line[stop_id] = trips[stop_trip_id] if stops_current_line[stop_id].nil?
-    end    
-
-    stops_current_line
-end
-
-
-
-def add_routes_infos_to_stops!(params)
-    root_path_line  = params[:ratp_gtfs_line_path]
-    stops           = params[:stops]
-    stops_id_table  = params[:stops_id_table]
-
-    #for each line get their belonging stops then add their infos the global stops hash
-    Dir.glob("#{root_path_line}/*").each do |line_dir|
-        puts "#{line_dir}"
-
-        get_stops_for_line(line_dir).each do |stop_current_line_k, stop_current_line_v|
-            corresp_id = stops_id_table[stop_current_line_k]
-            if stop_current_line_v.nil?
-                puts stop_current_line_k
-                puts stop_current_line_v
-                puts "#{stop_current_line_k} -> #{corresp_id} unknown"
-            end
-            stops[corresp_id][:lines].push(stop_current_line_v[:line]).uniq!
-            stops[corresp_id][:type] = stop_current_line_v[:type]
-        end
-    end
-end
-
-
-def parse_edges(params)
-    graph = params[:stops]
-    stops_id_table = params[:stops_id_table]
-
-    IO.foreach(params[:edges_path]).each_with_index do |line, line_index|
-        line = line.split(',')
-        
-        from_stop_id    = line.at(0)
-        to_stop_id      = line.at(1)
-        duration        = line.at(2)
-        begin_time      = line.at(3)
-        end_time        = line.at(4)
-        edge_type       = line.at(5).strip #transfer or not
-
-        #transpose ids
-        corresp_from_id = stops_id_table[from_stop_id]
-        corresp_to_id   = stops_id_table[to_stop_id]
-
-        #edge between two merged nodes
-        next if corresp_from_id == corresp_to_id
-
-        node = graph[corresp_from_id]
-        edge = graph[corresp_from_id][:edges][corresp_to_id]
-
-        #edge type in edges.txt is not the same as route/stop type...
-        if( edge_type == "2" ) #walk
-            edge_type = 4
-        else
-            edge_type = node[:type] #metro, RER or BUS
-        end
-
-        #because we have merged nodes with the same name
-        #there are multiple redondants edges...
-        #keep only the shortest (by walk)
-        if (edge.nil?) or (duration.to_i < edge[:duration].to_i and edge_type == 4)
-            graph[corresp_from_id][:edges][corresp_to_id] = {
-                :duration   => duration,
-                :begin_time => begin_time,
-                :end_time   => end_time,
-                :type       => edge_type
-            }
-        end
-        '
-        else
-            #keep the shortest edge
-            if graph[from_r][:edges][to_r][:duration].to_i > duration.to_i
-                    graph[from_r][:edges][to_r] = {
-                    :duration => duration,
-                    :begin_time => begin_time,
-                    :end_time => end_time,
-                    :type => edge_type
-                }
-            end
-        end
-        '
-    end
-    
-    graph
-end
 
 
 ###
@@ -316,15 +303,6 @@ if not File.directory?("#{ARGV[0]}")
 end
 
 
-#model :
-# stops = { "id1" => { :name => "", :type => "", ...}}, "id2" => {...}, ... }
-# stops_id_map = { "id2" => "id1", "id3" => "id1" } == 
-# when graph is created all stop_id are transposed using stops_id_table
-# graph = stops
-# node: stops[:id]
-# edge: node[:edges][:dest_node_id]
-# next node: graph[ node[ :edges[:dest_node_id] ] ]
-
 puts "Read stops file (nodes)"
 stops, stops_id_table = read_stops(ratp_gtfs_full_path: ARGV[1], merge_names: true)
 
@@ -339,26 +317,9 @@ puts "Create graph by parsing edges.txt file"
 graph = parse_edges(edges_path: ARGV[2], stops: stops, stops_id_table: stops_id_table)
 
 
-
-
-# Add infos from routes (line, direction, type) to the stops (nodes)
-# => Join routes.txt, trips.txt and stop_times.txt then join stop_times with the stops
-#puts "Add routes infos to stops (line, type, direction)"
-
-
-#puts "Recherche des stops sans ligne"
-#puts stops.select { |key, stop| stop[:line] == 0 }.length
-
-
-#puts " "
-#puts "Create Graph"
-#graph = create_graph("#{ARGV[2]}", stops)
-puts graph["3663696"]
-
 puts " "
 puts "Output graph in file #{ARGV[3]}"
-#output_graph(ARGV[3], graph)
-
+output_graph(ARGV[3], graph)
 
 
 puts " "
@@ -379,9 +340,9 @@ while not node.nil?
     
     puts "Station #{node[:name]}, lignes #{node[:lines]}"
     
-    q += node[:edges].keys.select { |dest_id| 
-        graph[dest_id][:type] == "1" and graph[dest_id][:visited] != 1
-    }.map { |dest_id| 
+    q += node[:edges].select { |dest_id, edge_values| 
+        edge_values[:type] == "1" and graph[dest_id][:visited] != 1 and edge_values[:line] == "6"
+    }.map { |dest_id, _| 
         graph[dest_id]
     }
     p q.length
