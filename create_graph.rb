@@ -80,7 +80,7 @@ def read_stops(params)
             :lat => lat,
             :lon => lon,
             :lines => [],
-            :type => "",
+            :type => 0,
             :orig_line => ""
         }
     end
