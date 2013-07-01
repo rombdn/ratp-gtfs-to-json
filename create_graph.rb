@@ -73,6 +73,8 @@ def read_stops(params)
         name    = line.match(/,,"([^"]+)"/)[1]
         lat     = line.match(/4[0-9]\.[0-9]+/)[0]
         lon     = line.match(/2\.[0-9]+/)[0]
+        zip     = line.match(/- ([0-9]{5})"/)[1]
+        addr    = line.match(/"([^"]+ - [0-9]+)",/)[1]
 
         stops << {
             :id => id,
@@ -81,19 +83,19 @@ def read_stops(params)
             :lon => lon,
             :lines => [],
             :type => 0,
-            :orig_line => ""
+            :orig_line => "",
+            :zip => zip,
+            :addr => addr
         }
     end
 
     #create the correspondence table
     #   group stops by name
-    #   for each group create keep only the first element as reference id
+    #   for each group keep only the first element as reference id
     #   in the form { :id1 => id1, :id2 => id1, :id3 => id1, ...}
-    #   e.g {"2399"=>"2399", "1789"=>"2399"}
-    #   result is the final table
     #   e.g "2399"=>"2399", "1789"=>"2399", "2339"=>"2339", "1834"=>"2339", ...
     stops_id_table = stops.group_by { |stop| 
-        stop[:name] 
+        stop[:name] + stop[:zip]
     }.inject({}) { |result, (_, group_for_a_name)|
         group_for_a_name.each { |sub_stop|
             result[sub_stop[:id]] = group_for_a_name.first[:id]
@@ -260,6 +262,7 @@ def output_graph(path, graph)
                 \"lat\": #{node[:lat].to_f.round(4)},
                 \"lon\": #{node[:lon].to_f.round(4)}
             },
+            \"zip\": \"#{node[:zip]}\",
             \"edges\": [
                 "
         node[:edges].each_with_index { |(dest_id, edge), index|
