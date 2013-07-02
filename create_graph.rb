@@ -224,8 +224,13 @@ def parse_edges(params)
         if( edge_type == "2" ) #walk
             edge_type = 4
         else
+            if node[:type] == ""
+                puts "WARNING: TYPE empty for node #{node[:name]}, line #{stops[to_stop_id][:orig_line]}"
+                node[:type] = 3 #BUS
+            end
             edge_type = node[:type] #metro, RER or BUS
         end
+
 
         #because we have merged nodes with the same name
         #there are multiple redondants edges...
