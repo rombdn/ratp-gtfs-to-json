@@ -153,7 +153,7 @@ def get_stops_for_line(line_dir)
         stop_id         = stop_line.at(3)
 
         stops_for_this_line[stop_id] = trips[stop_trip_id] if stops_for_this_line[stop_id].nil?
-    end    
+    end
 
     stops_for_this_line
 end
@@ -178,8 +178,10 @@ def add_routes_infos_to_stops!(params)
                 puts stop_current_line_v
                 puts "#{stop_current_line_k} -> #{mapped_stop_id} unknown"
             end
+
             stops[mapped_stop_id][:lines].push(stop_current_line_v[:line]).uniq!
             stops[mapped_stop_id][:type] = stop_current_line_v[:type]
+            stops[stop_current_line_k][:type] = stop_current_line_v[:type] #used for edges line
             stops[stop_current_line_k][:orig_line] = stop_current_line_v[:line] #used for edges line
         end
     end
@@ -224,17 +226,28 @@ def parse_edges(params)
         if( edge_type == "2" ) #walk
             edge_type = 4
         else
-            if node[:type] == ""
-                puts "WARNING: TYPE empty for node #{node[:name]}, line #{stops[to_stop_id][:orig_line]}"
-                node[:type] = 3 #BUS
+            if stops[to_stop_id][:type] == ""
+                puts "WARNING: TYPE empty for node #{stops[to_stop_id][:name]}, line #{stops[to_stop_id][:orig_line]}"
+                stops[to_stop_id][:type] = 3 #BUS
             end
-            edge_type = node[:type] #metro, RER or BUS
+            edge_type = stops[to_stop_id][:type] #metro, RER or BUS
         end
 
 
         #because we have merged nodes with the same name
         #there are multiple redondants edges...
         #keep only the shortest (by walk)
+        if not edge.nil? and mapped_from_stop_id == '3716924'
+            #puts edge
+            puts ""
+            puts ""
+            puts "EDGE REDUNDANT"
+            puts "Mapped: #{mapped_from_stop_id}->#{mapped_to_stop_id}"
+            puts "New: #{from_stop_id}->#{to_stop_id}, type: #{edge_type}, line: #{stops[to_stop_id][:orig_line]}"
+            puts ""
+            puts ""
+        end
+
         if (edge.nil?) or (duration.to_i < edge[:duration].to_i and edge_type == 4)
             graph[mapped_from_stop_id][:edges][mapped_to_stop_id] = {
                 :duration   => duration,
@@ -243,6 +256,14 @@ def parse_edges(params)
                 :type       => edge_type,
                 :line       => stops[to_stop_id][:orig_line]
             }
+        end
+
+        if from_stop_id == '3813090'
+            puts "ORIG: #{from_stop_id} -> #{to_stop_id}"
+            puts "NEW: #{mapped_from_stop_id} -> #{mapped_to_stop_id}"
+            puts graph['3716924']
+            puts ""
+            puts ""
         end
     end
     
@@ -334,7 +355,7 @@ puts " "
 puts "Demo"
 
 
-start = graph["2390"]
+start = graph["3716924"]
 visited = {}
 q = [start]
 puts "Ligne #{start[:line]}"
@@ -349,7 +370,10 @@ while not node.nil?
     puts "Station #{node[:name]}, lignes #{node[:lines]}"
     
     q += node[:edges].select { |dest_id, edge_values| 
-        edge_values[:type] == "1" and graph[dest_id][:visited] != 1 and edge_values[:line] == "6"
+        puts dest_id
+        puts edge_values
+        puts ""
+        edge_values[:type] == "3" and graph[dest_id][:visited] != 1 and edge_values[:line] == "87"
     }.map { |dest_id, _| 
         graph[dest_id]
     }

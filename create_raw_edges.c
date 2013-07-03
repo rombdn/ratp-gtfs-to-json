@@ -107,10 +107,15 @@ r_update_edge
 */
 void r_update_edge(r_edge *edge, int start_time, int end_time)
 {        
+    int delta = 0;
     //used for averaging durations at the end
     edge->counter += 1;
     
-    edge->duration += end_time - start_time;
+    delta = end_time - start_time;
+
+    if(delta <= 0) delta = 60;
+
+    edge->duration += delta;
 
     if(edge->type == METRO) {
         if(edge->debut > end_time && end_time > 3*3600) 
@@ -196,7 +201,8 @@ void r_parse_stop_times_file(char *path, r_hashtable *edges_table)
             edge = r_create_edge(from_stop_id, to_stop_id, METRO);
             r_hash_add(edges_table, edge, key);
         }
-        else
+        //todo: test removing else
+        //if(last_dep_time != 0)
         {
             r_update_edge( edge, last_dep_time, dep_time );
         }
@@ -270,7 +276,7 @@ void r_print_edge(void *edge)
     int end_time = 0;
 
     if(edge == NULL) {
-        fprintf(stderr, "ERROR in r_print_edge: edge to be printed is NULL");
+        fprintf(stderr, "ERROR in r_print_edge: edge to be printed is NULL\n");
         exit(1);
     }
 
@@ -281,9 +287,17 @@ void r_print_edge(void *edge)
     counter = ((r_edge *)edge)->counter;
     if( counter > 0 ) {
         average_duration = (((r_edge *)edge)->duration) / counter;
+        if(average_duration < 60) {
+            fprintf(stderr, "WARNING: duration: %d, counter: %d for edge %d->%d\n", 
+                ((r_edge *)edge)->duration, 
+                counter,
+                ((r_edge *)edge)->from_stop_id,
+                ((r_edge *)edge)->to_stop_id);
+            average_duration = 60;
+        }
     }
     else {
-        average_duration = 0;
+        average_duration = 60;
     }
 
     start_time = ((r_edge *)edge)->debut;
