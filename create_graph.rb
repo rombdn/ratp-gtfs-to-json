@@ -233,11 +233,20 @@ def parse_edges(params)
             edge_type = stops[to_stop_id][:type] #metro, RER or BUS
         end
 
+        if edge_type == "0" and stops[to_stop_id][:orig_line].index('T') != 0 #type 0 but not tramway
+            if graph[mapped_from_stop_id][:name].upcase == graph[mapped_from_stop_id][:name]
+                edge_type = 3
+            else
+                edge_type = 1
+            end
+        end
+
 
         #because we have merged nodes with the same name
         #there are multiple redondants edges...
         #keep only the shortest (by walk)
-        if not edge.nil? and mapped_from_stop_id == '3716924'
+'        
+        if not edge.nil? and mapped_from_stop_id == "3716924"
             #puts edge
             puts ""
             puts ""
@@ -247,26 +256,58 @@ def parse_edges(params)
             puts ""
             puts ""
         end
+'
+        graph[mapped_from_stop_id][:edges][mapped_to_stop_id] = [] if edge.nil?
 
-        if (edge.nil?) or (duration.to_i < edge[:duration].to_i and edge_type == 4)
-            graph[mapped_from_stop_id][:edges][mapped_to_stop_id] = {
-                :duration   => duration,
-                :begin_time => begin_time,
-                :end_time   => end_time,
-                :type       => edge_type,
-                :line       => stops[to_stop_id][:orig_line]
+        if edge_type == 4
+            result = graph[mapped_from_stop_id][:edges][mapped_to_stop_id].detect { |v|
+                v[:type] == 4
             }
+
+            if result.nil?
+                graph[mapped_from_stop_id][:edges][mapped_to_stop_id] << {
+                    :duration    => duration,
+                    :begin_time  => begin_time,
+                    :end_time    => end_time,
+                    :type        => edge_type,
+                    :line        => stops[to_stop_id][:orig_line]
+                }
+            end
+        else
+            result = graph[mapped_from_stop_id][:edges][mapped_to_stop_id].detect { |v|
+                v[:type] == edge_type and v[:line] == stops[to_stop_id][:orig_line] 
+            }
+
+            if result.nil?
+                graph[mapped_from_stop_id][:edges][mapped_to_stop_id] << {
+                    :duration    => duration,
+                    :begin_time  => begin_time,
+                    :end_time    => end_time,
+                    :type        => edge_type,
+                    :line        => stops[to_stop_id][:orig_line]
+                }
+            end
         end
 
-        if from_stop_id == '3813090'
+
+
+        #puts " "
+        
+
+        #if (edge.nil?) or (duration.to_i < edge[:duration].to_i and edge_type == 4)
+
+'
+        if from_stop_id == "3813090"
             puts "ORIG: #{from_stop_id} -> #{to_stop_id}"
             puts "NEW: #{mapped_from_stop_id} -> #{mapped_to_stop_id}"
-            puts graph['3716924']
+            puts graph["3716924"]
             puts ""
             puts ""
         end
+'
     end
-    
+
+
     graph
 end
 
@@ -285,24 +326,26 @@ def output_graph(path, graph)
         \"#{key}\": {
             \"name\": \"#{node[:name]}\",
             \"loc\": {
-                \"lat\": #{node[:lat].to_f.round(4)},
-                \"lon\": #{node[:lon].to_f.round(4)}
+                \"lat\": #{node[:lat].to_f.round(5)},
+                \"lon\": #{node[:lon].to_f.round(5)}
             },
             \"zip\": \"#{node[:zip]}\",
             \"edges\": [
                 "
-        node[:edges].each_with_index { |(dest_id, edge), index|
+        node[:edges].each_with_index { |(dest_id, sub_edges), index|
             output += "," if index > 0
-            output +=
-                "{
-                    \"dest\": #{dest_id},
-                    \"dur\": #{edge[:duration]},
-                    \"begin\": \"#{edge[:begin_time]}\",
-                    \"end\": \"#{edge[:end_time]}\",
-                    \"type\": #{edge[:type]},
-                    \"line\": \"#{edge[:line]}\"
-                }
-                "
+            
+            sub_edges.each_with_index { |sub_edge, sub_index| 
+                output += "," if sub_index > 0
+                output +=
+                    "   {
+                        \"dest\": #{dest_id},
+                        \"dur\": #{sub_edge[:duration]},
+                        \"type\": #{sub_edge[:type]},
+                        \"line\": \"#{sub_edge[:line]}\"
+                    }
+                    "                
+            }
         }
 
         output +=
@@ -369,11 +412,8 @@ while not node.nil?
     
     puts "Station #{node[:name]}, lignes #{node[:lines]}"
     
-    q += node[:edges].select { |dest_id, edge_values| 
-        puts dest_id
-        puts edge_values
-        puts ""
-        edge_values[:type] == "3" and graph[dest_id][:visited] != 1 and edge_values[:line] == "87"
+    q += node[:edges].select { |dest_id, sub_edges| 
+        sub_edges.detect { |v| v[:type] == "3" and graph[dest_id][:visited] != 1 and v[:line] == "87" }
     }.map { |dest_id, _| 
         graph[dest_id]
     }
