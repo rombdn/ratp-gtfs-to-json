@@ -205,6 +205,7 @@ def parse_edges(params)
         end_time        = line.at(4)
         edge_type       = line.at(5).strip #transfer?
 
+
         #map ids
         mapped_from_stop_id = stops_id_table[from_stop_id]
         mapped_to_stop_id   = stops_id_table[to_stop_id]
@@ -230,7 +231,7 @@ def parse_edges(params)
                 puts "WARNING: TYPE empty for node #{stops[to_stop_id][:name]}, line #{stops[to_stop_id][:orig_line]}"
                 stops[to_stop_id][:type] = 3 #BUS
             end
-            edge_type = stops[to_stop_id][:type] #metro, RER or BUS
+            edge_type = stops[to_stop_id][:type].to_i #metro, RER or BUS
         end
 
         if edge_type == "0" and stops[to_stop_id][:orig_line].index('T') != 0 #type 0 but not tramway
@@ -238,6 +239,18 @@ def parse_edges(params)
                 edge_type = 3
             else
                 edge_type = 1
+            end
+        end
+
+        #debug
+        if(edge_type != 4)
+            if(
+                begin_time.match(/(.*)h/)[1].to_i < 4 or 
+                begin_time.match(/(.*)h/)[1].to_i > 12 or 
+                (end_time.match(/(.*)h/)[1].to_i < 16 and end_time.match(/(.*)h/)[1].to_i > 2) or
+                begin_time.match(/(.*)h/)[1].to_i >= end_time.match(/(.*)h/)[1].to_i
+            )
+                #puts "#{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: #{begin_time} to #{end_time}"
             end
         end
 
@@ -286,6 +299,24 @@ def parse_edges(params)
                     :type        => edge_type,
                     :line        => stops[to_stop_id][:orig_line]
                 }
+            else
+                begin_h = begin_time.match(/(.*)h/)[1].to_i
+                begin_m = begin_time.match(/h(.*)/)[1].to_i || 0
+                resb_h = result[:begin_time].match(/(.*)h/)[1].to_i
+                resb_m = result[:begin_time].match(/h(.*)/)[1].to_i || 0
+                
+                if( (begin_h < resb_h) or (begin_h == resb_h and begin_m < resb_m) )
+                    puts "Updating START #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:begin_time]} to #{begin_time}"
+                end
+
+                end_h = end_time.match(/(.*)h/)[1].to_i
+                end_m = end_time.match(/h(.*)/)[1].to_i || 0
+                rese_h = result[:end_time].match(/(.*)h/)[1].to_i
+                rese_m = result[:end_time].match(/h(.*)/)[1].to_i || 0
+
+                if( (end_h > rese_h) or (end_h == rese_h and end_m > rese_m) )
+                    puts "Updating END #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:end_time]} to #{end_time}"
+                end                
             end
         end
 

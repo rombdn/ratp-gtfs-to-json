@@ -287,6 +287,7 @@ void r_print_edge(void *edge)
     counter = ((r_edge *)edge)->counter;
     if( counter > 0 ) {
         average_duration = (((r_edge *)edge)->duration) / counter;
+        /*
         if(average_duration < 60) {
             fprintf(stderr, "WARNING: duration: %d, counter: %d for edge %d->%d\n", 
                 ((r_edge *)edge)->duration, 
@@ -294,7 +295,7 @@ void r_print_edge(void *edge)
                 ((r_edge *)edge)->from_stop_id,
                 ((r_edge *)edge)->to_stop_id);
             average_duration = 60;
-        }
+        }*/
     }
     else {
         average_duration = 60;
