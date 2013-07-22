@@ -126,7 +126,20 @@ def get_stops_for_line(line_dir)
         r_id            = route_line.at(0)
         r_line          = route_line.at(2).gsub("\"", '').strip
         r_type          = route_line.at(5).gsub("\"", '').strip
-        routes[r_id]    = {:line => r_line, :type => r_type}
+		
+		#puts route_line.at(3)
+		
+		if route_line.at(3).include? "<->"
+			if route_line.at(3).include? "Aller"
+				r_dir = route_line.at(3).match(/([^\(]+) <->/)[1]
+			else
+				r_dir = route_line.at(3).match(/<-> ([^\)]+)/)[1]
+			end
+		else
+			r_dir = route_line.at(3).match(/[^\(\)]+/)
+		end
+		
+        routes[r_id]    = {:line => r_line, :type => r_type, :dir => r_dir}
     end
 
     #trips
@@ -183,6 +196,7 @@ def add_routes_infos_to_stops!(params)
             stops[mapped_stop_id][:type] = stop_current_line_v[:type]
             stops[stop_current_line_k][:type] = stop_current_line_v[:type] #used for edges line
             stops[stop_current_line_k][:orig_line] = stop_current_line_v[:line] #used for edges line
+			stops[stop_current_line_k][:dir] = stop_current_line_v[:dir]
         end
     end
 end
@@ -283,7 +297,8 @@ def parse_edges(params)
                     :begin_time  => begin_time,
                     :end_time    => end_time,
                     :type        => edge_type,
-                    :line        => stops[to_stop_id][:orig_line]
+                    :line        => stops[to_stop_id][:orig_line],
+					:dir         => stops[to_stop_id][:dir]
                 }
             end
         else
@@ -297,7 +312,8 @@ def parse_edges(params)
                     :begin_time  => begin_time,
                     :end_time    => end_time,
                     :type        => edge_type,
-                    :line        => stops[to_stop_id][:orig_line]
+                    :line        => stops[to_stop_id][:orig_line],
+					:dir         => stops[to_stop_id][:dir]
                 }
             else
                 begin_h = begin_time.match(/(.*)h/)[1].to_i
@@ -377,8 +393,10 @@ def output_graph(path, graph)
                         \"type\": #{sub_edge[:type]},
                         \"open\": \"#{sub_edge[:begin_time]}\",
                         \"close\": \"#{sub_edge[:end_time]}\",
-                        \"line\": \"#{sub_edge[:line]}\"
-                    }
+                        \"line\": \"#{sub_edge[:line]}\""
+				output += "\"dir\": \"#{sub_edge[:dir]}\"" if sub_edge[:dir] != "" or sub_edge[:dir] != "\""
+                output += "
+					}
                     "                
             }
         }
@@ -387,8 +405,8 @@ def output_graph(path, graph)
             "]
         }"
 
-        fout.gsub!(/\s+/, "")
-        fout.gsub!(/\n/, "")
+        #output.gsub!(/\s+/, "")
+        #output.gsub!(/\n/, "")
         fout.puts(output)
     }
     fout.puts("}")

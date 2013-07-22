@@ -33,6 +33,9 @@ typedef struct r_edge {
     int from_stop_id;
     int duration;
     int debut;
+	int last_encounter;
+	int encounters_avg;
+	int encounters;
     int end;
     int counter;
     int type;
@@ -95,6 +98,9 @@ r_edge* r_create_edge(int from_stop_id, int to_stop_id, int type)
     new->counter        = 0;
     new->debut          = 3600*24;
     new->end            = 0;
+	new->last_encounter = 0;
+	new->encounters		= 0;
+	new->encounters_avg = 0;
 
     return new;
 }
@@ -108,6 +114,7 @@ r_update_edge
 void r_update_edge(r_edge *edge, int start_time, int end_time)
 {        
     int delta = 0;
+	int temp = 0;
     //used for averaging durations at the end
     edge->counter += 1;
     
@@ -121,13 +128,32 @@ void r_update_edge(r_edge *edge, int start_time, int end_time)
         if(edge->debut > end_time && end_time > 3*3600) 
             edge->debut = end_time;
 
-        if(edge->end < end_time) 
+        if(edge->end < end_time)
             edge->end = end_time;        
     }
     else {
         edge->debut = 0;
         edge->end = 25*3600;
     }
+	
+	if(edge->last_encounter != 0)
+	{
+		if(edge->last_encounter < start_time)
+		{
+			temp = /*abs*/(start_time - edge->last_encounter);
+			if(temp < 1200 && temp > 20)
+			{
+				edge->encounters_avg += temp;
+				edge->encounters += 1;
+			}
+		}
+
+		edge->last_encounter = start_time;
+	}
+	else
+	{
+		edge->last_encounter = start_time;
+	}
 }
 
 
@@ -304,7 +330,7 @@ void r_print_edge(void *edge)
     start_time = ((r_edge *)edge)->debut;
     end_time = ((r_edge *)edge)->end;
 
-    printf("%d,%d,%d,%dh%d,%dh%d,%d\n", 
+    printf("%d,%d,%d,%dh%d,%dh%d,%d", 
         ((r_edge *)edge)->from_stop_id,
         ((r_edge *)edge)->to_stop_id,
         average_duration,
@@ -312,6 +338,14 @@ void r_print_edge(void *edge)
         end_time/3600, (end_time%3600)/60,
         ((r_edge *)edge)->type
     );
+	
+	if(((r_edge *)edge)->type != CORRESPONDANCE)
+	{
+		if(((r_edge *)edge)->encounters > 0 && ((r_edge *)edge)->encounters_avg != 0)
+			printf(",%d", ((r_edge *)edge)->encounters_avg / ((r_edge *)edge)->encounters);
+	}
+	
+	printf("\n");
 }
 
 
