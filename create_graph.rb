@@ -142,11 +142,11 @@ def get_stops_for_line(line_dir)
 
     #stop_times
     IO.foreach("#{line_dir}/stops.txt").each { |line| nb_stops_for_line += 1 }
-    nb_stops_for_line -= 1 #little hack to break next loop as soon as we got infos for each stop
+    #nb_stops_for_line -= 1
 
     IO.foreach("#{line_dir}/stop_times.txt").each_with_index do |stop_line, index|
         next if index == 0
-        break if stops_for_this_line.length == nb_stops_for_line
+        break if stops_for_this_line.length == nb_stops_for_line #end loop as soon as we got infos for each stop
         stop_line = stop_line.split(',')
         
         stop_trip_id    = stop_line.at(0)
@@ -306,7 +306,8 @@ def parse_edges(params)
                 resb_m = result[:begin_time].match(/h(.*)/)[1].to_i || 0
                 
                 if( (begin_h < resb_h) or (begin_h == resb_h and begin_m < resb_m) )
-                    puts "Updating START #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:begin_time]} to #{begin_time}"
+                    #puts "Updating START #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:begin_time]} to #{begin_time}"
+                    result[:begin_time] = begin_time
                 end
 
                 end_h = end_time.match(/(.*)h/)[1].to_i
@@ -315,7 +316,8 @@ def parse_edges(params)
                 rese_m = result[:end_time].match(/h(.*)/)[1].to_i || 0
 
                 if( (end_h > rese_h) or (end_h == rese_h and end_m > rese_m) )
-                    puts "Updating END #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:end_time]} to #{end_time}"
+                    #puts "Updating END #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:end_time]} to #{end_time}"
+                    result[:end_time] = end_time
                 end                
             end
         end
@@ -373,6 +375,8 @@ def output_graph(path, graph)
                         \"dest\": #{dest_id},
                         \"dur\": #{sub_edge[:duration]},
                         \"type\": #{sub_edge[:type]},
+                        \"open\": \"#{sub_edge[:begin_time]}\",
+                        \"close\": \"#{sub_edge[:end_time]}\",
                         \"line\": \"#{sub_edge[:line]}\"
                     }
                     "                
@@ -383,6 +387,8 @@ def output_graph(path, graph)
             "]
         }"
 
+        fout.gsub!(/\s+/, "")
+        fout.gsub!(/\n/, "")
         fout.puts(output)
     }
     fout.puts("}")
@@ -444,7 +450,9 @@ while not node.nil?
     puts "Station #{node[:name]}, lignes #{node[:lines]}"
     
     q += node[:edges].select { |dest_id, sub_edges| 
-        sub_edges.detect { |v| v[:type] == "3" and graph[dest_id][:visited] != 1 and v[:line] == "87" }
+        sub_edges.detect { |v| 
+            v[:type] == 3 and graph[dest_id][:visited] != 1 and v[:line] == "87" 
+        }
     }.map { |dest_id, _| 
         graph[dest_id]
     }
