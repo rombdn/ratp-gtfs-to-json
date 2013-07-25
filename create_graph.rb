@@ -136,8 +136,10 @@ def get_stops_for_line(line_dir)
 				r_dir = route_line.at(3).match(/<-> ([^\)]+)/)[1]
 			end
 		else
-			r_dir = route_line.at(3).match(/[^\(\)]+/)
+			r_dir = route_line.at(3).match(/[^\"\(\)]+/)[0]
 		end
+		
+		#p r_dir
 		
         routes[r_id]    = {:line => r_line, :type => r_type, :dir => r_dir}
     end
@@ -218,6 +220,7 @@ def parse_edges(params)
         begin_time      = line.at(3)
         end_time        = line.at(4)
         edge_type       = line.at(5).strip #transfer?
+		freq        	= line.at(6).strip if not line.at(6).nil?
 
 
         #map ids
@@ -298,7 +301,8 @@ def parse_edges(params)
                     :end_time    => end_time,
                     :type        => edge_type,
                     :line        => stops[to_stop_id][:orig_line],
-					:dir         => stops[to_stop_id][:dir]
+					:dir         => stops[to_stop_id][:dir],
+					:freq 		 => freq
                 }
             end
         else
@@ -313,7 +317,8 @@ def parse_edges(params)
                     :end_time    => end_time,
                     :type        => edge_type,
                     :line        => stops[to_stop_id][:orig_line],
-					:dir         => stops[to_stop_id][:dir]
+					:dir         => stops[to_stop_id][:dir],
+					:freq 		 => freq
                 }
             else
                 begin_h = begin_time.match(/(.*)h/)[1].to_i
@@ -334,7 +339,14 @@ def parse_edges(params)
                 if( (end_h > rese_h) or (end_h == rese_h and end_m > rese_m) )
                     #puts "Updating END #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:end_time]} to #{end_time}"
                     result[:end_time] = end_time
-                end                
+                end
+
+				
+				if not result[:freq].nil? and not freq.nil?
+					if freq.to_i < result[:freq].to_i
+						result[:freq] = freq
+					end
+				end
             end
         end
 
@@ -375,26 +387,30 @@ def output_graph(path, graph)
         \"#{key}\": {
             \"name\": \"#{node[:name]}\",
             \"loc\": {
-                \"lat\": #{node[:lat].to_f.round(5)},
-                \"lon\": #{node[:lon].to_f.round(5)}
+                \"lat\":#{node[:lat].to_f.round(5)},
+                \"lon\":#{node[:lon].to_f.round(5)}
             },
-            \"zip\": \"#{node[:zip]}\",
+            \"zip\":\"#{node[:zip]}\",
             \"edges\": [
                 "
         node[:edges].each_with_index { |(dest_id, sub_edges), index|
             output += "," if index > 0
-            
+			
             sub_edges.each_with_index { |sub_edge, sub_index| 
                 output += "," if sub_index > 0
+				#p sub_edge[:dir] if dest_id == "3766635"
                 output +=
                     "   {
-                        \"dest\": #{dest_id},
-                        \"dur\": #{sub_edge[:duration]},
-                        \"type\": #{sub_edge[:type]},
-                        \"open\": \"#{sub_edge[:begin_time]}\",
-                        \"close\": \"#{sub_edge[:end_time]}\",
-                        \"line\": \"#{sub_edge[:line]}\""
-				output += "\"dir\": \"#{sub_edge[:dir]}\"" if sub_edge[:dir] != "" or sub_edge[:dir] != "\""
+                        \"dest\":#{dest_id},
+                        \"dur\":#{sub_edge[:duration]},
+                        \"type\":#{sub_edge[:type]},
+                        \"open\":\"#{sub_edge[:begin_time]}\",
+                        \"close\":\"#{sub_edge[:end_time]}\",
+                        \"line\":\"#{sub_edge[:line]}\""
+				output += ",
+						\"dir\":\"#{sub_edge[:dir]}\"" if sub_edge[:dir] != "" and sub_edge[:dir] != '"'
+				output += ",
+						\"freq\":#{sub_edge[:freq]}" if not sub_edge[:freq].nil? and sub_edge[:freq] != "" and sub_edge[:freq] != "\""
                 output += "
 					}
                     "                
@@ -410,6 +426,43 @@ def output_graph(path, graph)
         fout.puts(output)
     }
     fout.puts("}")
+    fout.close
+end
+
+
+def output_graph_mini(path, graph)
+    fout = File.open(path, 'w')
+
+    fout.write("{")
+    graph.each_with_index { |(key, node), index_node|
+        output = ""
+        output += "," if index_node > 0
+        output += "\"#{key}\":{\"name\":\"#{node[:name]}\","
+		output += "\"loc\":{\"lat\":#{node[:lat].to_f.round(5)},\"lon\":#{node[:lon].to_f.round(5)}},"
+		output += "\"zip\":\"#{node[:zip]}\",\"edges\": ["
+		
+        node[:edges].each_with_index { |(dest_id, sub_edges), index|
+            output += "," if index > 0
+			
+            sub_edges.each_with_index { |sub_edge, sub_index| 
+                output += "," if sub_index > 0
+				#p sub_edge[:dir] if dest_id == "3766635"
+                output += "{\"dest\":#{dest_id},\"dur\":#{sub_edge[:duration]},"
+				output += "\"type\":#{sub_edge[:type]},\"open\":\"#{sub_edge[:begin_time]}\",\"close\":\"#{sub_edge[:end_time]}\","
+				output += "\"line\":\"#{sub_edge[:line]}\""
+				output += ",\"dir\":\"#{sub_edge[:dir]}\"" if sub_edge[:dir] != "" and sub_edge[:dir] != '"'
+				output += ",\"freq\":#{sub_edge[:freq]}" if not sub_edge[:freq].nil? and sub_edge[:freq] != "" and sub_edge[:freq] != "\""
+                output += "}"                
+            }
+        }
+
+        output += "]}"
+
+        #output.gsub!(/\s+/, "")
+        #output.gsub!(/\n/, "")
+        fout.write(output)
+    }
+    fout.write("}")
     fout.close
 end
 
@@ -446,7 +499,7 @@ graph = parse_edges(edges_path: ARGV[2], stops: stops, stops_id_table: stops_id_
 
 puts " "
 puts "Output graph in file #{ARGV[3]}"
-output_graph(ARGV[3], graph)
+output_graph_mini(ARGV[3], graph)
 
 
 puts " "
