@@ -251,7 +251,7 @@ def parse_edges(params)
             edge_type = stops[to_stop_id][:type].to_i #metro, RER or BUS
         end
 
-        if edge_type == "0" and stops[to_stop_id][:orig_line].index('T') != 0 #type 0 but not tramway
+        if (edge_type == "0" or edge_type == 0) and stops[to_stop_id][:orig_line].index('T') != 0 #type 0 but not tramway
             if graph[mapped_from_stop_id][:name].upcase == graph[mapped_from_stop_id][:name]
                 edge_type = 3
             else
@@ -260,7 +260,7 @@ def parse_edges(params)
         end
 
         #debug
-        if(edge_type != 4)
+        'if(edge_type != 4)
             if(
                 begin_time.match(/(.*)h/)[1].to_i < 4 or 
                 begin_time.match(/(.*)h/)[1].to_i > 12 or 
@@ -269,7 +269,7 @@ def parse_edges(params)
             )
                 #puts "#{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: #{begin_time} to #{end_time}"
             end
-        end
+        end'
 
 
         #because we have merged nodes with the same name
@@ -330,7 +330,7 @@ def parse_edges(params)
                     #puts "Updating START #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:begin_time]} to #{begin_time}"
                     result[:begin_time] = begin_time
                 end
-
+            
                 end_h = end_time.match(/(.*)h/)[1].to_i
                 end_m = end_time.match(/h(.*)/)[1].to_i || 0
                 rese_h = result[:end_time].match(/(.*)h/)[1].to_i
@@ -340,7 +340,7 @@ def parse_edges(params)
                     #puts "Updating END #{from_stop_id} -> #{to_stop_id}, line #{stops[to_stop_id][:orig_line]}, type #{edge_type}: from #{result[:end_time]} to #{end_time}"
                     result[:end_time] = end_time
                 end
-
+            
 				
 				if not result[:freq].nil? and not freq.nil?
 					if freq.to_i < result[:freq].to_i
@@ -448,7 +448,8 @@ def output_graph_mini(path, graph)
                 output += "," if sub_index > 0
 				#p sub_edge[:dir] if dest_id == "3766635"
                 output += "{\"dest\":#{dest_id},\"dur\":#{sub_edge[:duration]},"
-				output += "\"type\":#{sub_edge[:type]},\"open\":\"#{sub_edge[:begin_time]}\",\"close\":\"#{sub_edge[:end_time]}\","
+				output += "\"type\":#{sub_edge[:type]},"
+				output += "\"open\":\"#{sub_edge[:begin_time]}\",\"close\":\"#{sub_edge[:end_time]}\","
 				output += "\"line\":\"#{sub_edge[:line]}\""
 				output += ",\"dir\":\"#{sub_edge[:dir]}\"" if sub_edge[:dir] != "" and sub_edge[:dir] != '"'
 				output += ",\"freq\":#{sub_edge[:freq]}" if not sub_edge[:freq].nil? and sub_edge[:freq] != "" and sub_edge[:freq] != "\""
@@ -502,6 +503,13 @@ puts "Output graph in file #{ARGV[3]}"
 output_graph_mini(ARGV[3], graph)
 
 
+
+filemap = File.open('mapping.txt', 'w');
+stops_id_table.each do |stop_id, mapped_stop_id|
+    filemap.write "#{stop_id},#{mapped_stop_id}\n"
+end
+
+
 puts " "
 puts "Demo"
 
@@ -529,3 +537,4 @@ while not node.nil?
     }
     p q.length
 end
+
