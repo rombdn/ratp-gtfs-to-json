@@ -24,28 +24,28 @@ Line X directory
    
    
 And the output is :
-{
-	<stop_id>: {
-		name: <name>,
-		loc: {
-			lat: <latitude>,
-			lon: <longitude>
-		}
-		zip: <zipcode>,
-		edges: [
-			{
-				"dest": <dest_stop_id>,
-				"dur": <edge_duration>,
-				"type": <edge_type>,
-				"open": <hour_of_opening>,
-				"close": <hour_of_closing>,
-				"line": <line_number>,
-				"dir": <line_direction>,
-				"freq": <average_frequency>
-			}
-		]
-	}
-}
+    {
+        <stop_id>: {
+            name: <name>,
+            loc: {
+                lat: <latitude>,
+                lon: <longitude>
+            }
+            zip: <zipcode>,
+            edges: [
+                {
+                    "dest": <dest_stop_id>,
+                    "dur": <edge_duration>,
+                    "type": <edge_type>,
+                    "open": <hour_of_opening>,
+                    "close": <hour_of_closing>,
+                    "line": <line_number>,
+                    "dir": <line_direction>,
+                    "freq": <average_frequency>
+                }
+            ]
+        }
+    }
 
 You can see the full RATP GTFS description in the PDF file in the page linked above (direct link: http://data.ratp.fr/?eID=ics_od_datastoredownload&file=88)
 
