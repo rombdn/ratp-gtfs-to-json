@@ -68,3 +68,20 @@ Create graph nodes by browsing GTFS lines directories to get line informations (
 The stops (stations) with identical names are merged to reduce graph size because in the original GTFS files there is one stop_id per line per direction.
 
 See comments in the scripts for further explanations.
+
+
+
+
+Usage
+-----------------
+
+`gcc create_raw_edges.c lib/r_hashtable.c lib/r_linkedlist.c -I lib/ -o create_raw_edges`
+`create_raw_edges <RATP_GTFS_FULL directory> > edges.txt`
+`create_graph.rb <RATP_GTFS_LINES directory> <RATP_GTFS_FULL directory> <edges.txt> <output.json>`
+
+
+
+Licence
+------------
+(c) 2013 Romain BEAUDON
+This code may be freely distributed under the terms of the GPL3 License
