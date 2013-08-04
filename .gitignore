@@ -1,5 +1,7 @@
 data/
+old/
 .DS_STORE
 edges.txt
 *.exe
 *.json
+*.txt
