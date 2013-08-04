@@ -19,8 +19,8 @@ Line X directory
 | ----------------- | --------- | -------------- | ------------- |  
 | route_id          | route_id  | stop_id        | stop_id       |   
 | trip_id           | trip_id   | trip_id        | stop_name     |
-| type              |           |                |               |          
-| line (directory)  |			|			     |				 |
+| type              |           | arrival_time   |               |          
+| line (directory)  |			  |			       |				     |
    
    
 And the output is :
