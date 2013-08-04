@@ -84,4 +84,4 @@ Usage
 Licence
 ------------
 (c) 2013 Romain BEAUDON
-This code may be freely distributed under the terms of the GPL3 License
+This code may be freely distributed under the terms of the GPL3 Licence
