@@ -3,7 +3,7 @@ ratp-gtfs-to-json
 
 Create a JSON graph from RATP open data (http://data.ratp.fr/fr/les-donnees/fiche-de-jeu-de-donnees/dataset/offre-transport-de-la-ratp-format-gtfs.html)
 
-This graph is the base for fxos-metrobusparis (http://github.com/rombdn/fxos-metrobusparis)
+**This is part of [fxos-metrobusparis](http://github.com/rombdn/fxos-metrobusparis)**
 
 
 Data Overview
